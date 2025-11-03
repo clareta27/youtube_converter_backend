@@ -1,16 +1,12 @@
 import os
 from flask import Flask, request, jsonify
 from urllib.parse import urlparse, parse_qs
-
-# === Import core class ===
 from youtube_transcript_api import (
     YouTubeTranscriptApi,
     TranscriptsDisabled,
     NoTranscriptFound,
     VideoUnavailable,
 )
-
-# === Import metadata version checker ===
 try:
     import importlib.metadata as importlib_metadata
 except ImportError:
@@ -18,7 +14,7 @@ except ImportError:
 
 app = Flask(__name__)
 
-# === Helper: Extract video ID dari berbagai format URL YouTube ===
+# === Helper: Ambil video_id dari URL YouTube ===
 def extract_video_id(youtube_url: str) -> str:
     try:
         u = urlparse(youtube_url)
@@ -32,13 +28,12 @@ def extract_video_id(youtube_url: str) -> str:
     except Exception:
         return ""
 
-# === Endpoint utama: Ambil transcript YouTube ===
+# === Endpoint utama: ambil transcript ===
 @app.post("/transcript")
 def transcript():
     try:
         data = request.get_json(force=True)
         url = data.get("url", "").strip()
-
         if not url:
             return jsonify({"status": "error", "message": "Missing 'url'"}), 400
 
@@ -46,53 +41,56 @@ def transcript():
         if not video_id:
             return jsonify({"status": "error", "message": "Invalid YouTube URL"}), 400
 
-        # ✅ Gunakan class YouTubeTranscriptApi.get_transcript() (versi universal)
-        transcript_items = YouTubeTranscriptApi.get_transcript(
-            video_id, languages=["id", "en", "en-US", "en-GB"]
-        )
+        # ✅ Gunakan instance YouTubeTranscriptApi (v1.2.3+)
+        api = YouTubeTranscriptApi()
+        transcripts = api.list_transcripts(video_id)
 
+        # Pilih bahasa yang tersedia
+        transcript_obj = None
+        for lang in ["id", "en", "en-US", "en-GB"]:
+            try:
+                transcript_obj = transcripts.find_transcript([lang])
+                break
+            except Exception:
+                continue
+
+        if not transcript_obj:
+            transcript_obj = next(iter(transcripts))
+
+        transcript_items = transcript_obj.fetch()
         text = " ".join([t["text"] for t in transcript_items if t.get("text")])
-        language = transcript_items[0].get("language", "unknown")
+        language = transcript_obj.language_code
 
         return jsonify(
             {
                 "status": "success",
                 "video_id": video_id,
                 "language": language,
-                "transcript": text,
                 "length": len(text),
+                "transcript": text,
             }
         )
 
-    # === Error handling ===
     except TranscriptsDisabled:
-        return jsonify(
-            {"status": "error", "message": "Transcripts are disabled for this video"}
-        ), 403
+        return jsonify({"status": "error", "message": "Transcripts are disabled for this video"}), 403
     except NoTranscriptFound:
-        return jsonify(
-            {"status": "error", "message": "No transcript available for this video"}
-        ), 404
+        return jsonify({"status": "error", "message": "No transcript available for this video"}), 404
     except VideoUnavailable:
-        return jsonify(
-            {"status": "error", "message": "Video unavailable or invalid"}
-        ), 404
+        return jsonify({"status": "error", "message": "Video unavailable or invalid"}), 404
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# === Root endpoint (cek status server) ===
+# === Root endpoint (cek server aktif) ===
 @app.get("/")
 def home():
-    return jsonify(
-        {
-            "message": "✅ YouTube Transcript API is running.",
-            "usage": "POST /transcript { 'url': 'https://www.youtube.com/watch?v=...' }",
-        }
-    )
+    return jsonify({
+        "message": "✅ YouTube Transcript API is running.",
+        "usage": "POST /transcript { 'url': 'https://www.youtube.com/watch?v=...' }"
+    })
 
 
-# === Cek versi library yang digunakan ===
+# === Endpoint cek versi library ===
 @app.get("/version")
 def version():
     try:
@@ -104,5 +102,5 @@ def version():
 
 # === Jalankan server (Render-compatible) ===
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # Wajib agar Render bisa binding port
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
