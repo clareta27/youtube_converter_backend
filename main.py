@@ -40,7 +40,7 @@ def transcript():
         if not video_id:
             return jsonify({"status": "error", "message": "Invalid YouTube URL"}), 400
 
-        # === Get available transcripts ===
+        # === Get available transcripts (new API) ===
         transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
 
         # === Try preferred languages first ===
@@ -52,11 +52,10 @@ def transcript():
             except Exception:
                 continue
 
-        # === Fallback: take the first available transcript ===
+        # === Fallback: use first available transcript ===
         if not transcript_obj:
             try:
-                first = next(iter(transcripts))
-                transcript_obj = first
+                transcript_obj = next(iter(transcripts))
             except StopIteration:
                 raise NoTranscriptFound("No transcript found for this video")
 
@@ -101,7 +100,17 @@ def home():
     )
 
 
-# === Start Server ===
+# === (Optional) Check library version ===
+import youtube_transcript_api
+
+@app.get("/version")
+def version():
+    return jsonify({
+        "youtube_transcript_api_version": youtube_transcript_api.__version__
+    })
+
+
+# === Start Server (for Render / Railway) ===
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.environ.get("PORT", 10000))  # ✅ wajib untuk Render
     app.run(host="0.0.0.0", port=port)
