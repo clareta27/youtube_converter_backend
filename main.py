@@ -7,11 +7,14 @@ from youtube_transcript_api import (
     NoTranscriptFound,
     VideoUnavailable,
 )
-import importlib.metadata  # ✅ untuk ambil versi package dengan aman
+try:
+    import importlib.metadata as importlib_metadata  # ✅ Python 3.8+
+except ImportError:
+    import importlib_metadata  # fallback untuk versi lama
 
 app = Flask(__name__)
 
-# === Helper: Extract video ID from any YouTube URL ===
+# === Helper: Extract video ID dari berbagai format URL YouTube ===
 def extract_video_id(youtube_url: str) -> str:
     try:
         u = urlparse(youtube_url)
@@ -25,7 +28,7 @@ def extract_video_id(youtube_url: str) -> str:
     except Exception:
         return ""
 
-# === Main Endpoint: /transcript ===
+# === Endpoint utama: ambil transcript YouTube ===
 @app.post("/transcript")
 def transcript():
     try:
@@ -39,34 +42,20 @@ def transcript():
         if not video_id:
             return jsonify({"status": "error", "message": "Invalid YouTube URL"}), 400
 
-        # === Get available transcripts (new API) ===
-        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+        # ✅ API baru youtube-transcript-api (v1.x): langsung pakai get_transcript()
+        transcript_items = YouTubeTranscriptApi.get_transcript(
+            video_id,
+            languages=["id", "en", "en-US", "en-GB"],
+        )
 
-        # === Try preferred languages first ===
-        transcript_obj = None
-        for lang in ["id", "id-**", "en", "en-US", "en-GB"]:
-            try:
-                transcript_obj = transcripts.find_transcript([lang])
-                break
-            except Exception:
-                continue
-
-        # === Fallback: use first available transcript ===
-        if not transcript_obj:
-            try:
-                transcript_obj = next(iter(transcripts))
-            except StopIteration:
-                raise NoTranscriptFound("No transcript found for this video")
-
-        # === Fetch and combine text ===
-        transcript_items = transcript_obj.fetch()
         text = " ".join([t["text"] for t in transcript_items if t.get("text")])
+        language = transcript_items[0].get("language", "unknown")
 
         return jsonify(
             {
                 "status": "success",
                 "video_id": video_id,
-                "language": transcript_obj.language_code,
+                "language": language,
                 "transcript": text,
                 "length": len(text),
             }
@@ -87,7 +76,8 @@ def transcript():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# === Root Test Endpoint ===
+
+# === Endpoint root (cek server aktif) ===
 @app.get("/")
 def home():
     return jsonify(
@@ -97,16 +87,18 @@ def home():
         }
     )
 
-# === Safe version endpoint (no crash in Python 3.13) ===
+
+# === Endpoint cek versi library ===
 @app.get("/version")
 def version():
     try:
-        yt_version = importlib.metadata.version("youtube-transcript-api")
-    except Exception:
-        yt_version = "unknown"
+        yt_version = importlib_metadata.version("youtube-transcript-api")
+    except Exception as e:
+        yt_version = f"unknown ({str(e)})"
     return jsonify({"youtube_transcript_api_version": yt_version})
 
-# === Start Server (Render-compatible) ===
+
+# === Start server (untuk Render) ===
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # ✅ wajib untuk Render
+    port = int(os.environ.get("PORT", 10000))  # 🔥 wajib untuk Render
     app.run(host="0.0.0.0", port=port)
