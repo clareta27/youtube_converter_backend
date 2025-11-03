@@ -1,6 +1,6 @@
 import os
-import time
 import random
+import time
 from flask import Flask, request, jsonify
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import (
@@ -12,7 +12,7 @@ from youtube_transcript_api import (
 
 app = Flask(__name__)
 
-# === Load proxy list from environment ===
+# === Load proxy list ===
 def load_proxy_list():
     raw = os.getenv("PROXY_LIST", "")
     if not raw:
@@ -35,14 +35,12 @@ def extract_video_id(youtube_url: str) -> str:
         return ""
 
 def get_random_proxy():
-    """Ambil 1 proxy acak dari list"""
     if not PROXY_LIST:
         return None
     proxy_url = random.choice(PROXY_LIST)
     return {"http": proxy_url, "https": proxy_url}
 
 def delay_between_requests():
-    """Tambahkan delay acak biar aman"""
     sleep_time = random.uniform(1.5, 3.5)
     time.sleep(sleep_time)
     return sleep_time
@@ -50,7 +48,7 @@ def delay_between_requests():
 @app.get("/")
 def home():
     return jsonify({
-        "message": "✅ YouTube Transcript API (v1.2.3+) with Auto Proxy Rotation is running.",
+        "message": "✅ YouTube Transcript API (v1.2.3+) working with .list() method",
         "proxies_loaded": len(PROXY_LIST),
     })
 
@@ -59,6 +57,7 @@ def transcript():
     try:
         data = request.get_json(force=True)
         url = (data.get("url") or "").strip()
+
         if not url:
             return jsonify({"status": "error", "message": "Missing URL"}), 400
 
@@ -69,12 +68,10 @@ def transcript():
         proxy = get_random_proxy()
         delay = delay_between_requests()
 
-        # === FIX HERE ===
-        # Buat instance YouTubeTranscriptApi, bukan panggil class statis
+        # ✅ Cara baru sesuai 1.2.3
         api = YouTubeTranscriptApi()
-        transcript_list = api.list_transcripts(video_id)
+        transcript_list = api.list(video_id, proxies=proxy)
 
-        # Coba cari bahasa yang cocok
         transcript_obj = None
         for lang in ["id", "en", "en-US", "en-GB"]:
             try:
@@ -87,7 +84,7 @@ def transcript():
             transcript_obj = next(iter(transcript_list))
 
         transcript_items = transcript_obj.fetch()
-        text = " ".join([t.get("text", "") for t in transcript_items])
+        text = " ".join([t["text"] for t in transcript_items if t.get("text")])
         lang = transcript_obj.language_code
 
         return jsonify({
@@ -105,7 +102,7 @@ def transcript():
     except NoTranscriptFound:
         return jsonify({"status": "error", "message": "No transcript available"}), 404
     except VideoUnavailable:
-        return jsonify({"status": "error", "message": "Video unavailable or invalid"}), 404
+        return jsonify({"status": "error", "message": "Video unavailable"}), 404
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
