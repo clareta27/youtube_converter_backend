@@ -28,10 +28,7 @@ def convert():
         if not url:
             return jsonify({"status": "error", "message": "Missing 'url'"}), 400
 
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "quiet": True,
-        }
+        ydl_opts = {"format": "bestaudio/best", "quiet": True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             audio_url = info.get("url")
@@ -48,23 +45,21 @@ def convert():
 
 @app.post("/transcribe")
 def transcribe():
-    """
-    Endpoint untuk konversi langsung dari URL YouTube ke teks menggunakan OpenAI Whisper.
-    """
+    """Konversi YouTube → teks menggunakan OpenAI Whisper"""
     try:
         data = request.get_json(force=True)
         url = data.get("url")
         if not url:
             return jsonify({"status": "error", "message": "Missing 'url'"}), 400
 
-        # Ambil link audio terbaik dari YouTube
+        # Ambil audio terbaik dari YouTube
         ydl_opts = {"format": "bestaudio/best", "quiet": True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             audio_url = info.get("url")
             title = info.get("title", "Unknown Title")
 
-        # Unduh audio file sementara
+        # Unduh sementara
         temp_filename = "temp_audio.webm"
         r = requests.get(audio_url, stream=True)
         with open(temp_filename, "wb") as f:
@@ -72,7 +67,7 @@ def transcribe():
                 if chunk:
                     f.write(chunk)
 
-        # Kirim ke OpenAI Whisper API
+        # Transkripsi via OpenAI Whisper
         with open(temp_filename, "rb") as audio_file:
             transcript = openai.Audio.transcriptions.create(
                 model="whisper-1",
@@ -92,5 +87,7 @@ def transcribe():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# --- Bagian penting untuk Render ---
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
