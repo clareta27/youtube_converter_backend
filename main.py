@@ -1,4 +1,5 @@
 import os
+import random
 from flask import Flask, request, jsonify
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import (
@@ -7,13 +8,25 @@ from youtube_transcript_api import (
     NoTranscriptFound,
     VideoUnavailable,
 )
-try:
-    import importlib.metadata as importlib_metadata
-except ImportError:
-    import importlib_metadata
 
 app = Flask(__name__)
 
+# === Load proxy list from environment ===
+def load_proxy_list():
+    raw = os.getenv("PROXY_LIST", "")
+    if not raw:
+        return []
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+PROXY_LIST = load_proxy_list()
+
+def get_random_proxy():
+    if not PROXY_LIST:
+        return None
+    proxy_url = random.choice(PROXY_LIST)
+    return {"http": proxy_url, "https": proxy_url}
+
+# === Helper: extract video ID ===
 def extract_video_id(youtube_url: str) -> str:
     try:
         u = urlparse(youtube_url)
@@ -27,53 +40,43 @@ def extract_video_id(youtube_url: str) -> str:
     except Exception:
         return ""
 
+# === Transcript endpoint ===
 @app.post("/transcript")
 def transcript():
     try:
         data = request.get_json(force=True)
-        url = (data.get("url") or "").strip()
-
+        url = data.get("url", "").strip()
         if not url:
-            return jsonify({"status": "error", "message": "Missing 'url'"}), 400
+            return jsonify({"status": "error", "message": "Missing URL"}), 400
 
         video_id = extract_video_id(url)
         if not video_id:
             return jsonify({"status": "error", "message": "Invalid YouTube URL"}), 400
 
-        # ✅ Versi terbaru (Oktober 2025): gunakan instance + .list()
-        api = YouTubeTranscriptApi()
-        transcript_list = api.list(video_id)
+        proxy = get_random_proxy()
+        transcript_items = YouTubeTranscriptApi.get_transcript(
+            video_id,
+            proxies=proxy,
+            languages=["id", "en", "en-US", "en-GB"],
+        )
 
-        # Ambil salah satu bahasa yang cocok
-        transcript_obj = None
-        for lang in ["id", "en", "en-US", "en-GB"]:
-            try:
-                transcript_obj = transcript_list.find_transcript([lang])
-                break
-            except Exception:
-                continue
-
-        if not transcript_obj:
-            transcript_obj = next(iter(transcript_list))
-
-        transcript_items = transcript_obj.fetch()
-        text = " ".join([t.get("text", "") for t in transcript_items if t.get("text")])
-        language = getattr(transcript_obj, "language_code", "unknown")
+        text = " ".join([t.get("text", "") for t in transcript_items])
+        lang = transcript_items[0].get("language", "unknown") if transcript_items else "unknown"
 
         return jsonify({
             "status": "success",
             "video_id": video_id,
-            "language": language,
+            "language": lang,
             "length": len(text),
-            "transcript": text
+            "transcript": text,
         })
 
     except TranscriptsDisabled:
-        return jsonify({"status": "error", "message": "Transcripts disabled"}), 403
+        return jsonify({"status": "error", "message": "Transcripts are disabled for this video"}), 403
     except NoTranscriptFound:
-        return jsonify({"status": "error", "message": "No transcript found"}), 404
+        return jsonify({"status": "error", "message": "No transcript available for this video"}), 404
     except VideoUnavailable:
-        return jsonify({"status": "error", "message": "Video unavailable"}), 404
+        return jsonify({"status": "error", "message": "Video unavailable or invalid"}), 404
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -81,18 +84,11 @@ def transcript():
 @app.get("/")
 def home():
     return jsonify({
-        "message": "✅ YouTube Transcript API is running (using instance.list).",
-        "usage": "POST /transcript { 'url': 'https://www.youtube.com/watch?v=...' }"
+        "message": "✅ YouTube Transcript API via Proxy is running.",
+        "proxies_loaded": len(PROXY_LIST),
     })
 
-@app.get("/version")
-def version():
-    try:
-        yt_version = importlib_metadata.version("youtube-transcript-api")
-    except Exception as e:
-        yt_version = f"unknown ({str(e)})"
-    return jsonify({"youtube_transcript_api_version": yt_version})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.getenv("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
