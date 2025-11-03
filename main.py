@@ -1,21 +1,31 @@
 import os
 from flask import Flask, request, jsonify
 from urllib.parse import urlparse, parse_qs
+
+# ✅ Import fungsi langsung dari modul (versi 1.2.3)
 from youtube_transcript_api import (
-    YouTubeTranscriptApi,
+    get_transcript,
     TranscriptsDisabled,
     NoTranscriptFound,
     VideoUnavailable,
 )
+
+# ✅ Import metadata checker (untuk /version)
 try:
-    import importlib.metadata as importlib_metadata  # ✅ Python 3.8+
+    import importlib.metadata as importlib_metadata  # Python 3.8+
 except ImportError:
     import importlib_metadata  # fallback untuk versi lama
 
 app = Flask(__name__)
 
-# === Helper: Extract video ID dari berbagai format URL YouTube ===
+# === Helper: Extract video ID dari berbagai format YouTube URL ===
 def extract_video_id(youtube_url: str) -> str:
+    """
+    Mendapatkan video_id dari berbagai format YouTube:
+    - https://youtu.be/xxxx
+    - https://www.youtube.com/watch?v=xxxx
+    - https://www.youtube.com/shorts/xxxx
+    """
     try:
         u = urlparse(youtube_url)
         if u.netloc.endswith("youtu.be"):
@@ -28,7 +38,7 @@ def extract_video_id(youtube_url: str) -> str:
     except Exception:
         return ""
 
-# === Endpoint utama: ambil transcript YouTube ===
+# === Endpoint utama: Ambil transcript dari YouTube ===
 @app.post("/transcript")
 def transcript():
     try:
@@ -42,12 +52,13 @@ def transcript():
         if not video_id:
             return jsonify({"status": "error", "message": "Invalid YouTube URL"}), 400
 
-        # ✅ API baru youtube-transcript-api (v1.x): langsung pakai get_transcript()
-        transcript_items = YouTubeTranscriptApi.get_transcript(
+        # ✅ Versi terbaru youtube-transcript-api (v1.x)
+        transcript_items = get_transcript(
             video_id,
             languages=["id", "en", "en-US", "en-GB"],
         )
 
+        # Gabungkan teks dari setiap bagian transcript
         text = " ".join([t["text"] for t in transcript_items if t.get("text")])
         language = transcript_items[0].get("language", "unknown")
 
@@ -61,6 +72,7 @@ def transcript():
             }
         )
 
+    # === Error handling lengkap ===
     except TranscriptsDisabled:
         return jsonify(
             {"status": "error", "message": "Transcripts are disabled for this video"}
@@ -77,7 +89,7 @@ def transcript():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# === Endpoint root (cek server aktif) ===
+# === Root endpoint (cek status server) ===
 @app.get("/")
 def home():
     return jsonify(
@@ -87,8 +99,7 @@ def home():
         }
     )
 
-
-# === Endpoint cek versi library ===
+# === Cek versi library yang digunakan ===
 @app.get("/version")
 def version():
     try:
@@ -97,8 +108,7 @@ def version():
         yt_version = f"unknown ({str(e)})"
     return jsonify({"youtube_transcript_api_version": yt_version})
 
-
-# === Start server (untuk Render) ===
+# === Jalankan server (Render compatible) ===
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # 🔥 wajib untuk Render
+    port = int(os.environ.get("PORT", 10000))  # 🔥 wajib agar Render bisa bind port
     app.run(host="0.0.0.0", port=port)
