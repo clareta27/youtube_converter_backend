@@ -1,4 +1,5 @@
 import os
+import time
 import random
 from flask import Flask, request, jsonify
 from urllib.parse import urlparse, parse_qs
@@ -20,14 +21,8 @@ def load_proxy_list():
 
 PROXY_LIST = load_proxy_list()
 
-def get_random_proxy():
-    if not PROXY_LIST:
-        return None
-    proxy_url = random.choice(PROXY_LIST)
-    return {"http": proxy_url, "https": proxy_url}
-
-# === Helper: extract video ID ===
 def extract_video_id(youtube_url: str) -> str:
+    """Ambil ID video dari berbagai format URL YouTube"""
     try:
         u = urlparse(youtube_url)
         if u.netloc.endswith("youtu.be"):
@@ -40,12 +35,32 @@ def extract_video_id(youtube_url: str) -> str:
     except Exception:
         return ""
 
-# === Transcript endpoint ===
+def get_random_proxy():
+    """Pilih 1 proxy acak dari list"""
+    if not PROXY_LIST:
+        return None
+    proxy_url = random.choice(PROXY_LIST)
+    return {"http": proxy_url, "https": proxy_url}
+
+def delay_between_requests():
+    """Tambahkan delay acak agar tidak cepat diblok YouTube"""
+    sleep_time = random.uniform(1.5, 3.5)
+    time.sleep(sleep_time)
+    return sleep_time
+
+@app.get("/")
+def home():
+    return jsonify({
+        "message": "✅ YouTube Transcript API with Auto Proxy Rotation is running.",
+        "proxies_loaded": len(PROXY_LIST),
+    })
+
 @app.post("/transcript")
 def transcript():
     try:
         data = request.get_json(force=True)
-        url = data.get("url", "").strip()
+        url = (data.get("url") or "").strip()
+
         if not url:
             return jsonify({"status": "error", "message": "Missing URL"}), 400
 
@@ -53,7 +68,11 @@ def transcript():
         if not video_id:
             return jsonify({"status": "error", "message": "Invalid YouTube URL"}), 400
 
+        # Rotasi proxy & delay
         proxy = get_random_proxy()
+        delay = delay_between_requests()
+
+        # Ambil subtitle via proxy
         transcript_items = YouTubeTranscriptApi.get_transcript(
             video_id,
             proxies=proxy,
@@ -67,8 +86,10 @@ def transcript():
             "status": "success",
             "video_id": video_id,
             "language": lang,
+            "proxy_used": proxy["http"] if proxy else "None",
+            "delay": round(delay, 2),
             "length": len(text),
-            "transcript": text,
+            "transcript": text[:1000] + "..." if len(text) > 1000 else text,
         })
 
     except TranscriptsDisabled:
@@ -79,15 +100,6 @@ def transcript():
         return jsonify({"status": "error", "message": "Video unavailable or invalid"}), 404
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.get("/")
-def home():
-    return jsonify({
-        "message": "✅ YouTube Transcript API via Proxy is running.",
-        "proxies_loaded": len(PROXY_LIST),
-    })
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
