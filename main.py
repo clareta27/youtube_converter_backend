@@ -7,9 +7,9 @@ from youtube_transcript_api import (
     NoTranscriptFound,
     VideoUnavailable,
 )
+import importlib.metadata  # ✅ untuk ambil versi package dengan aman
 
 app = Flask(__name__)
-
 
 # === Helper: Extract video ID from any YouTube URL ===
 def extract_video_id(youtube_url: str) -> str:
@@ -24,7 +24,6 @@ def extract_video_id(youtube_url: str) -> str:
         return u.path.strip("/").split("/")[-1]
     except Exception:
         return ""
-
 
 # === Main Endpoint: /transcript ===
 @app.post("/transcript")
@@ -88,7 +87,6 @@ def transcript():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # === Root Test Endpoint ===
 @app.get("/")
 def home():
@@ -99,18 +97,16 @@ def home():
         }
     )
 
-
-# === (Optional) Check library version ===
-import youtube_transcript_api
-
+# === Safe version endpoint (no crash in Python 3.13) ===
 @app.get("/version")
 def version():
-    return jsonify({
-        "youtube_transcript_api_version": youtube_transcript_api.__version__
-    })
+    try:
+        yt_version = importlib.metadata.version("youtube-transcript-api")
+    except Exception:
+        yt_version = "unknown"
+    return jsonify({"youtube_transcript_api_version": yt_version})
 
-
-# === Start Server (for Render / Railway) ===
+# === Start Server (Render-compatible) ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))  # ✅ wajib untuk Render
     app.run(host="0.0.0.0", port=port)
