@@ -6,9 +6,11 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # diambil dari environment Render
+
 
 def extract_video_id(url: str):
+    """Ekstrak video_id dari berbagai format URL YouTube."""
     if "v=" in url:
         return url.split("v=")[-1].split("&")[0]
     if "youtu.be/" in url:
@@ -39,11 +41,10 @@ def transcribe():
         if not video_id:
             return jsonify({"status": "error", "message": "Invalid YouTube URL"}), 400
 
-        # === Temp folder ===
         tmpdir = tempfile.mkdtemp()
         output_path = os.path.join(tmpdir, f"{video_id}.mp3")
 
-        # === Download audio ===
+        # === Download audio dari YouTube ===
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
@@ -61,7 +62,7 @@ def transcribe():
         if not os.path.exists(downloaded_file):
             return jsonify({"status": "error", "message": "Failed to download audio"}), 500
 
-        # === Kirim ke Whisper ===
+        # === Kirim audio ke Whisper ===
         with open(downloaded_file, "rb") as audio_file:
             whisper_res = requests.post(
                 "https://api.openai.com/v1/audio/transcriptions",
