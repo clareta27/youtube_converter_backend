@@ -4,20 +4,14 @@ import yt_dlp
 import requests
 from flask import Flask, request, jsonify
 
+# Inisialisasi Flask
 app = Flask(__name__)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # diambil dari environment Render
+# Ambil API Key dari Environment Variable (Render)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
-def extract_video_id(url: str):
-    """Ekstrak video_id dari berbagai format URL YouTube."""
-    if "v=" in url:
-        return url.split("v=")[-1].split("&")[0]
-    if "youtu.be/" in url:
-        return url.split("youtu.be/")[-1].split("?")[0]
-    return None
-
-
+# === Endpoint Root ===
 @app.get("/")
 def home():
     return jsonify({
@@ -26,6 +20,17 @@ def home():
     })
 
 
+# === Helper: Extract Video ID dari URL ===
+def extract_video_id(url: str):
+    """Ekstrak ID video dari berbagai format URL YouTube."""
+    if "v=" in url:
+        return url.split("v=")[-1].split("&")[0]
+    if "youtu.be/" in url:
+        return url.split("youtu.be/")[-1].split("?")[0]
+    return None
+
+
+# === Endpoint utama: YouTube → Whisper ===
 @app.post("/transcribe")
 def transcribe():
     try:
@@ -37,14 +42,16 @@ def transcribe():
         if not OPENAI_API_KEY:
             return jsonify({"status": "error", "message": "OPENAI_API_KEY not configured"}), 500
 
+        # Ambil video_id dari URL
         video_id = extract_video_id(url)
         if not video_id:
             return jsonify({"status": "error", "message": "Invalid YouTube URL"}), 400
 
+        # Buat direktori sementara untuk file audio
         tmpdir = tempfile.mkdtemp()
         output_path = os.path.join(tmpdir, f"{video_id}.mp3")
 
-        # === Download audio dari YouTube ===
+        # === Download audio menggunakan yt_dlp ===
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
@@ -62,7 +69,7 @@ def transcribe():
         if not os.path.exists(downloaded_file):
             return jsonify({"status": "error", "message": "Failed to download audio"}), 500
 
-        # === Kirim audio ke Whisper ===
+        # === Kirim audio ke OpenAI Whisper ===
         with open(downloaded_file, "rb") as audio_file:
             whisper_res = requests.post(
                 "https://api.openai.com/v1/audio/transcriptions",
@@ -79,6 +86,7 @@ def transcribe():
                 "details": whisper_res.text
             }), 500
 
+        # === Ambil hasil transkripsi ===
         transcript = whisper_res.json().get("text", "")
 
         return jsonify({
@@ -93,6 +101,7 @@ def transcribe():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# === Jalankan server Flask ===
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
