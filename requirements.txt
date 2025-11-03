@@ -1,6 +1,4 @@
 Flask
 gunicorn
 yt-dlp
-ffmpeg-python
-openai>=1.0.0
 requests
