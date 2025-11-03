@@ -24,7 +24,7 @@ def transcribe():
     try:
         # Unduh hanya audio kecil ke file sementara
         with tempfile.TemporaryDirectory() as tmpdir:
-            out_path = os.path.join(tmpdir, "audio.m4a")
+            out_path = os.path.join(tmpdir, "audio.mp3")
             ydl_opts = {
                 "format": "bestaudio[filesize<20M]/bestaudio/best",
                 "outtmpl": out_path,
